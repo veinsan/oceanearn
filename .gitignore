@@ -1,0 +1,33 @@
+# Python / Django
+**/__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+apps/api/venv/
+apps/api/db.sqlite3
+apps/api/media/
+apps/api/staticfiles/
+
+# Node / React
+node_modules/
+apps/web/node_modules/
+apps/web/dist/
+apps/web/.vite/
+
+# Environment & Secrets
+.env
+.env.local
+.env.*.local
+apps/api/.env
+apps/web/.env
+!.env.example
+!apps/api/.env.example
+!apps/web/.env.example
+
+# OS & IDE
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp

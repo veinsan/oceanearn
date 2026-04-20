@@ -1,0 +1,38 @@
+# ========================
+# Python / Django
+# ========================
+apps/api/venv/
+apps/api/__pycache__/
+apps/api/**/__pycache__/
+apps/api/**/*.pyc
+apps/api/**/*.pyo
+apps/api/.pytest_cache/
+apps/api/media/
+apps/api/staticfiles/
+apps/api/db.sqlite3
+
+# ========================
+# Node / React
+# ========================
+apps/web/node_modules/
+apps/web/dist/
+apps/web/.vite/
+
+# ========================
+# Environment — PENTING
+# ========================
+.env
+apps/api/.env
+apps/web/.env
+!.env.example
+!apps/api/.env.example
+!apps/web/.env.example
+
+# ========================
+# Editor & OS
+# ========================
+.vscode/settings.json
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
