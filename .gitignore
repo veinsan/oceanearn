@@ -31,3 +31,7 @@ apps/web/.env
 .DS_Store
 Thumbs.db
 *.swp
+
+# Media
+apps/api/media/*
+!apps/api/media/.gitkeep

@@ -2,7 +2,7 @@
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.contrib.auth.password_validation import validate_password
-from .models import User
+from .models import User, TPSProfile, VerificationDocument
 
 
 # ─── Register (Email) ────────────────────────────────────────────────────────
@@ -57,7 +57,6 @@ class RoleSelectionSerializer(serializers.Serializer):
     role = serializers.ChoiceField(choices=ALLOWED_ROLES)
 
     def validate_role(self, value):
-        # Admin tidak bisa dipilih sendiri — hanya bisa di-assign manual
         if value == User.Role.ADMIN:
             raise serializers.ValidationError(
                 "Role admin tidak bisa dipilih melalui form ini."
@@ -66,10 +65,9 @@ class RoleSelectionSerializer(serializers.Serializer):
 
     def save(self, user: User):
         role = self.validated_data["role"]
-        user.role             = role
-        user.is_new_oauth_user = False   # Flag di-clear setelah role dipilih
+        user.role              = role
+        user.is_new_oauth_user = False
 
-        # Umum langsung verified, Nelayan/TPS tunggu dokumen
         if role == User.Role.UMUM:
             user.is_verified = True
 
@@ -83,9 +81,9 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     @classmethod
     def get_token(cls, user):
         token = super().get_token(user)
-        token["username"]         = user.username
-        token["role"]             = user.role
-        token["is_verified"]      = user.is_verified
+        token["username"]          = user.username
+        token["role"]              = user.role
+        token["is_verified"]       = user.is_verified
         token["is_new_oauth_user"] = user.is_new_oauth_user
         return token
 
@@ -93,3 +91,89 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         data = super().validate(attrs)
         data["user"] = UserProfileSerializer(self.user).data
         return data
+
+
+# ─── TPS Profile ─────────────────────────────────────────────────────────────
+
+class TPSProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model  = TPSProfile
+        fields = [
+            "id", "nama_tps", "alamat", "kecamatan", "kota",
+            "latitude", "longitude", "kapasitas_kg_hari",
+            "harga_per_kg", "is_active",
+        ]
+
+    def validate_harga_per_kg(self, value):
+        allowed_keys = {"plastik", "logam", "kaca", "organik"}
+        invalid = set(value.keys()) - allowed_keys
+        if invalid:
+            raise serializers.ValidationError(
+                f"Key tidak valid: {invalid}. Gunakan: {allowed_keys}"
+            )
+        for key, price in value.items():
+            if not isinstance(price, (int, float)) or price < 0:
+                raise serializers.ValidationError(
+                    f"Harga untuk '{key}' harus berupa angka positif."
+                )
+        return value
+
+
+# ─── Verification Document ────────────────────────────────────────────────────
+
+class VerificationDocumentUploadSerializer(serializers.ModelSerializer):
+    class Meta:
+        model  = VerificationDocument
+        fields = ["id", "role_requested", "doc_type", "file"]
+
+    def validate(self, attrs):
+        role_doc_map = {
+            User.Role.NELAYAN: {
+                VerificationDocument.DocType.KTP,
+                VerificationDocument.DocType.KARTU_NELAYAN,
+            },
+            User.Role.TPS: {
+                VerificationDocument.DocType.KTP,
+                VerificationDocument.DocType.NIB,
+                VerificationDocument.DocType.FOTO_LOKASI_TPS,
+            },
+        }
+        allowed_docs = role_doc_map.get(attrs["role_requested"], set())
+        if attrs["doc_type"] not in allowed_docs:
+            raise serializers.ValidationError({
+                "doc_type": (
+                    f"Dokumen '{attrs['doc_type']}' tidak valid "
+                    f"untuk role '{attrs['role_requested']}'."
+                )
+            })
+        return attrs
+
+
+class VerificationDocumentListSerializer(serializers.ModelSerializer):
+    username             = serializers.CharField(source="user.username",     read_only=True)
+    email                = serializers.CharField(source="user.email",        read_only=True)
+    reviewed_by_username = serializers.CharField(
+        source="reviewed_by.username", read_only=True, default=None
+    )
+
+    class Meta:
+        model  = VerificationDocument
+        fields = [
+            "id", "username", "email", "role_requested",
+            "doc_type", "file", "status",
+            "rejection_note", "reviewed_by_username",
+            "reviewed_at", "created_at",
+        ]
+        read_only_fields = fields
+
+
+class AdminReviewSerializer(serializers.Serializer):
+    action         = serializers.ChoiceField(choices=["approve", "reject"])
+    rejection_note = serializers.CharField(required=False, allow_blank=True)
+
+    def validate(self, attrs):
+        if attrs["action"] == "reject" and not attrs.get("rejection_note"):
+            raise serializers.ValidationError({
+                "rejection_note": "Wajib diisi jika dokumen ditolak."
+            })
+        return attrs
