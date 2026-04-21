@@ -4,6 +4,7 @@ from PIL import Image
 from io import BytesIO
 
 from features.users.models import TPSProfile
+from django.db import transaction as db_transaction
 
 
 # ─── Anti-Fraud: Perceptual Hashing ──────────────────────────────────────────
@@ -173,3 +174,88 @@ def find_nearest_tps(user_lat: float, user_lon: float, limit: int = 5) -> list[d
     # Sort by distance, ambil N terdekat
     tps_with_distance.sort(key=lambda x: x["distance_km"])
     return tps_with_distance[:limit]
+
+
+# ─── Transaction: Credit Koin ke Nelayan ─────────────────────────────────────
+
+KOIN_RATES = {
+    "plastik": 100,
+    "logam":   120,
+    "kaca":     60,
+    "organik":  40,
+}
+
+CARBON_FACTORS = {
+    "plastik": 2.5,
+    "logam":   1.8,
+    "kaca":    0.7,
+    "organik": 0.4,
+}
+
+
+def calculate_koin(jenis: str, berat_kg: float) -> int:
+    rate = KOIN_RATES.get(jenis, 80)
+    return int(berat_kg * rate)
+
+
+def calculate_carbon(jenis: str, berat_kg: float) -> float:
+    factor = CARBON_FACTORS.get(jenis, 1.0)
+    return round(berat_kg * factor, 2)
+
+
+def validate_and_credit(
+    submission,
+    berat_aktual_kg: float,
+    jenis_aktual: str,
+) -> dict:
+    """
+    Dipanggil saat TPS mengkonfirmasi penimbangan fisik.
+
+    Urutan atomik:
+      1. Hitung koin dari berat & jenis aktual
+      2. Update submission: status → validated, simpan final_weight
+      3. Tambah poin_terkumpul di User (nelayan)
+      4. Buat entri TransactionLedger (earn)
+
+    Returns: dict ringkasan transaksi
+    """
+    from features.rewards.models import TransactionLedger
+
+    koin_earned  = calculate_koin(jenis_aktual, berat_aktual_kg)
+    carbon_saved = calculate_carbon(jenis_aktual, berat_aktual_kg)
+
+    with db_transaction.atomic():
+        # ── 1. Update submission ──────────────────────────────────────────────
+        submission.status = "validated"
+        submission.final_weight = {
+            "berat_aktual_kg": berat_aktual_kg,
+            "jenis_aktual":    jenis_aktual,
+            "koin_diberikan":  koin_earned,
+            "carbon_saved_kg": carbon_saved,
+        }
+        submission.save(update_fields=["status", "final_weight"])
+
+        # ── 2. Credit koin ke nelayan ─────────────────────────────────────────
+        nelayan = submission.user
+        nelayan.poin_terkumpul += koin_earned
+        nelayan.save(update_fields=["poin_terkumpul"])
+
+        # ── 3. Catat di ledger ────────────────────────────────────────────────
+        ledger_entry = TransactionLedger.objects.create(
+            user              = nelayan,
+            amount            = koin_earned,
+            transaction_type  = TransactionLedger.TransactionType.EARN,
+            description       = (
+                f"Setoran sampah #{submission.id} — "
+                f"{berat_aktual_kg} kg {jenis_aktual}"
+            ),
+            ref_submission_id = submission.id,
+        )
+
+    return {
+        "submission_id": submission.id,
+        "koin_earned":   koin_earned,
+        "carbon_saved":  carbon_saved,
+        "new_balance":   nelayan.poin_terkumpul,
+        "ledger_id":     ledger_entry.id,
+    }

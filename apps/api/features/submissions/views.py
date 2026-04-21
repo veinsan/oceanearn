@@ -1,21 +1,24 @@
-from rest_framework             import status
-from rest_framework.response    import Response
-from rest_framework.views       import APIView
-from rest_framework.parsers     import MultiPartParser, FormParser
+from rest_framework import status
+from rest_framework.response import Response
+from rest_framework.views import APIView
+from rest_framework.parsers import MultiPartParser, FormParser
 
 from features.users.permissions import IsNelayan
-from .models       import WasteSubmission
-from .serializers  import (
+from features.users.permissions import IsTPS
+from .models import WasteSubmission
+from .serializers import (
     AnalyzeRequestSerializer,
     SubmissionConfirmSerializer,
     WasteSubmissionSerializer,
     NearestTPSSerializer,
+    TPSValidationSerializer,
 )
 from .services import (
     generate_image_hash,
     is_duplicate_submission,
     predict_waste_with_yolo,
     find_nearest_tps,
+    validate_and_credit,
 )
 
 
@@ -137,5 +140,59 @@ class SubmissionHistoryView(APIView):
 
         return Response(
             WasteSubmissionSerializer(submissions, many=True).data,
+            status=status.HTTP_200_OK,
+        )
+    
+class ValidateSubmissionView(APIView):
+    """
+    PATCH /api/v1/submissions/<submission_id>/validate/
+
+    Hanya TPS terverifikasi yang bisa akses.
+    TPS memasukkan berat dan jenis aktual setelah timbang fisik.
+    """
+    permission_classes = [IsTPS]
+
+    def patch(self, request, submission_id):
+        try:
+            submission = WasteSubmission.objects.select_related("user").get(
+                id=submission_id
+            )
+        except WasteSubmission.DoesNotExist:
+            return Response(
+                {"detail": "Submission tidak ditemukan."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        # Pastikan submission ini memang ditujukan ke TPS yang sedang login
+        if submission.tps.user != request.user:
+            return Response(
+                {"detail": "Submission ini bukan milik TPS Anda."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        if submission.status != WasteSubmission.Status.PENDING:
+            return Response(
+                {"detail": f"Submission sudah diproses dengan status: {submission.status}."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        serializer = TPSValidationSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        result = validate_and_credit(
+            submission      = submission,
+            berat_aktual_kg = serializer.validated_data["berat_aktual_kg"],
+            jenis_aktual    = serializer.validated_data["jenis_aktual"],
+        )
+
+        return Response(
+            {
+                "message": (
+                    f"Validasi berhasil. {result['koin_earned']} koin "
+                    f"dikreditkan ke {submission.user.username}."
+                ),
+                "detail": result,
+            },
             status=status.HTTP_200_OK,
         )

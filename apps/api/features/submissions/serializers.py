@@ -1,8 +1,8 @@
-# features/submissions/serializers.py
 from rest_framework import serializers
 from features.users.models import TPSProfile
 from .models import WasteSubmission
 
+VALID_JENIS = ["plastik", "logam", "kaca", "organik"]
 
 # ─── TPS Nearest (untuk response analyze) ────────────────────────────────────
 
@@ -72,3 +72,6 @@ class WasteSubmissionSerializer(serializers.ModelSerializer):
             "status", "created_at", "updated_at",
         ]
         read_only_fields = fields
+class TPSValidationSerializer(serializers.Serializer):
+    berat_aktual_kg = serializers.FloatField(min_value=0.01)
+    jenis_aktual    = serializers.ChoiceField(choices=VALID_JENIS)
