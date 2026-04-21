@@ -1,4 +1,3 @@
-# apps/api/oceanearn_core/settings.py
 import os
 from pathlib import Path
 from dotenv import load_dotenv
@@ -19,25 +18,41 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    "django.contrib.sites",
+
     # Third-party
     "rest_framework",
+    "rest_framework.authtoken",
     "rest_framework_simplejwt",
     "corsheaders",
+
+    # Auth & Google SSO
+    "allauth",
+    "allauth.account",
+    "allauth.socialaccount",
+    "allauth.socialaccount.providers.google",
+    "dj_rest_auth",
+    "dj_rest_auth.registration",
+
     # Features
     "features.users",
     "features.submissions",
     "features.rewards",
 ]
 
+# Required oleh django.contrib.sites
+SITE_ID = 1
+
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
-    "corsheaders.middleware.CorsMiddleware",   # Harus di atas CommonMiddleware
+    "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "allauth.account.middleware.AccountMiddleware",
 ]
 
 ROOT_URLCONF = "oceanearn_core.urls"
@@ -73,7 +88,7 @@ DATABASES = {
 }
 
 # Auth
-AUTH_USER_MODEL = "users.User"   # Custom user model nanti
+AUTH_USER_MODEL = "users.User"
 
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
@@ -103,6 +118,32 @@ SIMPLE_JWT = {
     "AUTH_HEADER_TYPES": ("Bearer",),
 }
 
+# GOOGLE SSO & DJ-REST-AUTH CONFIGURATION
+ACCOUNT_EMAIL_REQUIRED = True
+ACCOUNT_USERNAME_REQUIRED = True
+ACCOUNT_AUTHENTICATION_METHOD = "email"
+ACCOUNT_EMAIL_VERIFICATION = "none"
+
+# dj-rest-auth: pakai JWT bukan Token biasa
+REST_USE_JWT = True
+JWT_AUTH_COOKIE = None  # Stateless — token di header, bukan cookie
+
+# Custom adapter untuk redirect/flagging user baru
+SOCIALACCOUNT_ADAPTER = "features.users.adapters.OceanEarnSocialAccountAdapter"
+
+# Konfigurasi Provider Google
+SOCIALACCOUNT_PROVIDERS = {
+    "google": {
+        "SCOPE": ["profile", "email"],
+        "AUTH_PARAMS": {"access_type": "online"},
+        "APP": {
+            "client_id": os.getenv("GOOGLE_CLIENT_ID", "dummy-client-id"),
+            "secret": os.getenv("GOOGLE_CLIENT_SECRET", "dummy-secret"),
+            "key": "",
+        },
+    }
+}
+
 # CORS
 CORS_ALLOWED_ORIGINS = os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:5173").split(",")
 
@@ -114,7 +155,7 @@ USE_TZ = True
 
 # Static & Media
 STATIC_URL = "/static/"
-MEDIA_URL = "/media/"
+MEDIA_URL  = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
