@@ -2,6 +2,10 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --scale: min(100vw / 1920, 1);
+}
+
 @layer base {
   body {
     @apply bg-slate-50 text-slate-900;
