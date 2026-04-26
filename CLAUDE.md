@@ -52,7 +52,7 @@ apps/
     features/
       users/              # Auth, roles, TPS profiles, verification docs
       submissions/        # Waste photo submission pipeline
-      rewards/            # Stub — not yet implemented
+      rewards/            # Coin catalog, redemption, transaction ledger
   web/                    # React frontend
     src/
       utils/api.js        # Axios instance with JWT interceptor
@@ -76,6 +76,8 @@ apps/
 
 **Mock YOLO** — `features/submissions/services.py::predict_waste_with_yolo()` returns hardcoded estimates. The TODO comment marks where the real `ultralytics` model should be integrated.
 
+**Coin economy** — `KOIN_RATES` (plastik: 100, logam: 120, kaca: 60, organik: 40 koin/kg) and `CARBON_FACTORS` are constants in `submissions/services.py`. `validate_and_credit()` atomically updates the submission, increments `User.poin_terkumpul`, and writes a `TransactionLedger` entry. `process_redemption()` in `rewards/services.py` does the reverse atomically.
+
 ### Frontend Patterns
 
 **Axios instance** (`src/utils/api.js`) — `baseURL: /api/v1`, request interceptor injects `Authorization: Bearer <token>` from `localStorage["access_token"]`, response interceptor redirects to `/login` on 401.
@@ -92,18 +94,37 @@ apps/
 
 ```
 User (custom AbstractUser)
-  └── role: UMUM | NELAYAN | TPS | ADMIN
+  ├── role: UMUM | NELAYAN | TPS | ADMIN
+  ├── poin_terkumpul: int   # coin balance
+  ├── is_verified: bool
   └── TPSProfile (1:1, TPS role only)
-       └── harga_per_kg: JSON  # pricing per waste type
+       └── harga_per_kg: JSON  # {plastik: 2000, logam: 1500, ...} Rp/kg
   └── VerificationDocument (M2O)
        └── status: PENDING | APPROVED | REJECTED
 
 WasteSubmission
   ├── user → User (NELAYAN)
   ├── tps → TPSProfile
+  ├── foto_sampah: ImageField
+  ├── perceptual_hash: str  # pHash for duplicate detection
   ├── ai_estimation: JSON   # from mock YOLO
   ├── final_weight: JSON    # set by TPS after weighing
   └── status: PENDING | VALIDATED | REJECTED
+
+TransactionLedger          # append-only coin audit trail
+  ├── user → User
+  ├── amount: int           # positive=earn, negative=redeem
+  ├── transaction_type: earn | redeem
+  ├── ref_submission_id     # optional FK for earn entries
+  └── ref_redemption_id     # optional FK for redeem entries
+
+RewardCatalog
+  └── stok: int             # 0 = unlimited
+
+RedemptionOrder
+  ├── user → User, reward → RewardCatalog
+  ├── koin_spent: int       # snapshot of price at time of redemption
+  └── status: PENDING | SUCCESS | FAILED
 ```
 
 ---
@@ -114,7 +135,7 @@ WasteSubmission
 |--------|-----|
 | `/api/v1/users/` | Auth, profiles, verification |
 | `/api/v1/submissions/` | Waste submission pipeline |
-| `/api/v1/rewards/` | Not yet wired up |
+| `/api/v1/rewards/` | Coin catalog, redemption, ledger |
 | `/accounts/` | django-allauth (social auth) |
 
 ### Notable endpoints
@@ -128,6 +149,12 @@ WasteSubmission
 - `POST /api/v1/submissions/analyze/` — photo analysis (no DB write)
 - `POST /api/v1/submissions/confirm/` — persist submission
 - `GET /api/v1/submissions/history/` — nelayan's history
+- `PATCH /api/v1/submissions/<id>/validate/` — TPS weighs and validates; atomically credits coins
+- `GET /api/v1/rewards/` — reward catalog (all authenticated users)
+- `POST /api/v1/rewards/redeem/` — spend coins on a reward (NELAYAN only)
+- `GET /api/v1/rewards/redemptions/` — nelayan's redemption history
+- `GET /api/v1/rewards/transactions/` — coin ledger (earn + redeem)
+- `POST /api/v1/rewards/admin/catalog/` — admin creates new reward
 
 ---
 

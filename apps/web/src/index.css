@@ -3,11 +3,11 @@
 @tailwind utilities;
 
 :root {
-  --scale: min(100vw / 1920, 1);
+  --scale: max(min(100vw / 1920, 1), 0.35);
 }
 
 @layer base {
   body {
-    @apply bg-slate-50 text-slate-900;
+    margin: 0;
   }
 }

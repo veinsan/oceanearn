@@ -4,17 +4,32 @@ import Hero from '../../components/Hero';
 
 export default function LandingPage() {
   return (
-    <div
-      className="min-h-screen flex flex-col bg-cover bg-center bg-no-repeat"
-      style={{
-        backgroundImage: `linear-gradient(rgba(0,0,0,0.5), rgba(0,0,0,0.5)), url(${heroBg})`,
-      }}
-    >
-      {/* GLOBAL CONTAINER */}
-      <div className="w-full max-w-[1920px] mx-auto px-[clamp(16px,3.3vw,64px)]">
+    <div className="relative w-full min-h-screen overflow-hidden bg-black">
+
+      <div
+        className="absolute inset-0 bg-cover bg-center"
+        style={{ backgroundImage: `url(${heroBg})` }}
+      />
+
+      <div
+        className="absolute inset-0"
+        style={{
+          background: `linear-gradient(
+            90deg,
+            rgba(0,0,0,0.65) 0%,
+            rgba(0,0,0,0.55) 25%,
+            rgba(0,0,0,0.35) 55%,
+            rgba(0,0,0,0.1) 80%,
+            rgba(0,0,0,0) 100%
+          )`,
+        }}
+      />
+
+      <div className="relative max-w-[1920px] mx-auto px-[64px]">
         <Navbar />
         <Hero />
       </div>
+
     </div>
   );
 }
