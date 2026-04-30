@@ -54,13 +54,6 @@ class MeView(APIView):
 
 
 class RoleSelectionView(APIView):
-    """
-    Endpoint one-time: dipanggil setelah user baru login via Google.
-    Hanya bisa diakses oleh user dengan is_new_oauth_user = True.
-    
-    POST /api/v1/users/role-setup/
-    Body: { "role": "umum" | "nelayan" | "tps" }
-    """
     permission_classes = [IsAuthenticated, IsNewOAuthUser]
 
     def post(self, request):
@@ -71,7 +64,6 @@ class RoleSelectionView(APIView):
                 {
                     "message": f"Role berhasil diset: {user.get_role_display()}",
                     "user": UserProfileSerializer(user).data,
-                    # Frontend pakai redirect_to untuk tau mau ke mana
                     "redirect_to": _get_redirect(user.role),
                 },
                 status=status.HTTP_200_OK,
@@ -82,7 +74,7 @@ class RoleSelectionView(APIView):
 def _get_redirect(role: str) -> str:
     return {
         "umum":    "/dashboard",
-        "nelayan": "/upgrade",   # Upload dokumen dulu
+        "nelayan": "/upgrade",
         "tps":     "/upgrade",
     }.get(role, "/dashboard")
 
@@ -90,11 +82,6 @@ def _get_redirect(role: str) -> str:
 # ─── TPS Profile ─────────────────────────────────────────────────────────────
 
 class TPSProfileView(APIView):
-    """
-    GET  /api/v1/users/tps/profile/  — lihat profil TPS sendiri
-    POST /api/v1/users/tps/profile/  — Admin buat profil TPS untuk user TPS
-    PUT  /api/v1/users/tps/profile/  — TPS update profil sendiri
-    """
 
     def get_permissions(self):
         if self.request.method in ["POST"]:
@@ -112,7 +99,6 @@ class TPSProfileView(APIView):
         return Response(TPSProfileSerializer(profile).data)
 
     def post(self, request):
-        """Admin-only: buat profil TPS untuk user yang sudah verified."""
         user_id = request.data.get("user_id")
         try:
             tps_user = User.objects.get(id=user_id, role=User.Role.TPS)
@@ -129,7 +115,6 @@ class TPSProfileView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     def put(self, request):
-        """TPS update profil sendiri."""
         try:
             profile = request.user.tps_profile
         except TPSProfile.DoesNotExist:
@@ -144,13 +129,21 @@ class TPSProfileView(APIView):
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
+# ─── Public TPS List (TAMBAHAN LU, SUDAH FIX) ────────────────────────────────
+
+class PublicTPSListView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        tps_list = TPSProfile.objects.filter(is_active=True).values(
+            'id', 'nama_tps', 'kota', 'kecamatan', 'latitude', 'longitude'
+        )
+        return Response(list(tps_list))
+
+
 # ─── Verification Document — User Upload ─────────────────────────────────────
 
 class VerificationDocumentUploadView(APIView):
-    """
-    POST /api/v1/users/verification/upload/
-    Hanya untuk user authenticated yang belum verified.
-    """
     permission_classes = [IsAuthenticated]
     parser_classes     = [MultiPartParser, FormParser]
 
@@ -185,10 +178,6 @@ class VerificationDocumentUploadView(APIView):
 # ─── Verification Document — Admin Review ────────────────────────────────────
 
 class AdminVerificationListView(APIView):
-    """
-    GET /api/v1/admin/verifications/          — semua dokumen (filter by status)
-    GET /api/v1/admin/verifications/?status=pending
-    """
     permission_classes = [IsAdminMitra]
 
     def get(self, request):
@@ -202,10 +191,6 @@ class AdminVerificationListView(APIView):
 
 
 class AdminVerificationReviewView(APIView):
-    """
-    PATCH /api/v1/admin/verifications/<doc_id>/review/
-    Body: { "action": "approve" | "reject", "rejection_note": "..." }
-    """
     permission_classes = [IsAdminMitra]
 
     def patch(self, request, doc_id):
@@ -231,7 +216,7 @@ class AdminVerificationReviewView(APIView):
             return Response({
                 "message": f"Dokumen disetujui. User '{doc.user.username}' kini terverifikasi.",
                 "document_id": doc.id,
-                "user_is_verified": doc.user.is_verified,   # Konfirmasi side effect
+                "user_is_verified": doc.user.is_verified,
             })
 
         doc = reject_verification(

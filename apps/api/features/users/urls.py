@@ -10,6 +10,7 @@ from .views import (
     VerificationDocumentUploadView,
     AdminVerificationListView,
     AdminVerificationReviewView,
+    PublicTPSListView,  # ✅ tambahan
 )
 
 urlpatterns = [
@@ -24,6 +25,7 @@ urlpatterns = [
 
     # ── TPS ───────────────────────────────────────────────
     path("tps/profile/",   TPSProfileView.as_view(),    name="tps-profile"),
+    path("tps/public/",    PublicTPSListView.as_view(), name="tps-public"),  # ✅ tambahan lu
 
     # ── Verification ──────────────────────────────────────
     path("verification/upload/",

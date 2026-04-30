@@ -4,10 +4,47 @@
 
 :root {
   --scale: max(min(100vw / 1920, 1), 0.35);
+
+  --orange-200: #f3d5bb;
+  --orange-500: #d97925;
+  --orange-600: #c36d21;
+  --orange-900: #824916;
+  --orange-950: #4c2a0d;
+
+  --darkBlue-500: #033e8c;
+  --darkBlue-800: #022f69;
+  --darkBlue-900: #022554;
+  --darkBlue-950: #011631;
+
+  --blue-200:  #b1cef3;
+  --blue-500:  #0460d9;
+  --blue-800:  #0348a3;
+  --blue-950:  #01224c;
+
+  --lightBlue-500: #2b88d9;
+  --danger-500:    #f21905;
+  --success-500:   #28a745;
+
+  --blue-545:    #045dcf;
+  --navy-dark:   #0c1a30;
+  --grey-bg:     #f5f7fa;
+  --grey-light:  #eef2f7;
+  --grey-blue:   #8097b4;
 }
 
 @layer base {
-  body {
-    margin: 0;
-  }
+  body { margin: 0; }
 }
+
+.reveal {
+  opacity: 0;
+  transform: translateY(32px);
+  transition: opacity 0.65s ease, transform 0.65s ease;
+}
+.reveal.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+.reveal-delay-1 { transition-delay: 0.1s; }
+.reveal-delay-2 { transition-delay: 0.2s; }
+.reveal-delay-3 { transition-delay: 0.3s; }

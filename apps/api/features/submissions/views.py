@@ -2,6 +2,7 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.permissions import AllowAny
 
 from features.users.permissions import IsNelayan
 from features.users.permissions import IsTPS
@@ -25,14 +26,6 @@ from .services import (
 class AnalyzeSubmissionView(APIView):
     """
     POST /api/v1/submissions/analyze/
-
-    Tahap PREVIEW — tidak menyimpan data ke DB.
-    Flow:
-      1. Validasi input (foto + koordinat)
-      2. Generate pHash → cek duplikat
-      3. Jalankan YOLO estimator
-      4. Cari TPS terdekat via Haversine
-      5. Return hasil tanpa save
     """
     permission_classes = [IsNelayan]
     parser_classes     = [MultiPartParser, FormParser]
@@ -46,7 +39,6 @@ class AnalyzeSubmissionView(APIView):
         lat  = serializer.validated_data["lat"]
         lon  = serializer.validated_data["lon"]
 
-        # ── Step 1: Anti-fraud hash check ────────────────────────────────────
         image_hash = generate_image_hash(foto)
 
         if is_duplicate_submission(image_hash, user_id=request.user.id):
@@ -61,18 +53,16 @@ class AnalyzeSubmissionView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # ── Step 2: YOLO Estimation ───────────────────────────────────────────
-        foto.seek(0)   # Reset pointer setelah dibaca hash
+        foto.seek(0)
         ai_result = predict_waste_with_yolo(foto)
 
-        # ── Step 3: Nearest TPS ───────────────────────────────────────────────
         nearest_tps  = find_nearest_tps(lat, lon, limit=5)
         tps_serialized = NearestTPSSerializer(nearest_tps, many=True).data
 
         return Response(
             {
-                "image_hash":   image_hash,     # Dikirim balik ke frontend
-                "ai_estimation": ai_result,      # untuk di-pass ke /confirm/
+                "image_hash":   image_hash,
+                "ai_estimation": ai_result,
                 "nearest_tps":  tps_serialized,
             },
             status=status.HTTP_200_OK,
@@ -82,13 +72,6 @@ class AnalyzeSubmissionView(APIView):
 class ConfirmSubmissionView(APIView):
     """
     POST /api/v1/submissions/confirm/
-
-    Tahap SIMPAN — nelayan sudah lihat estimasi dan memilih TPS.
-    Flow:
-      1. Validasi input
-      2. Re-generate hash dari foto yang diupload ulang
-      3. Re-check duplikat (cegah manipulasi antara analyze dan confirm)
-      4. Simpan WasteSubmission ke DB dengan status pending
     """
     permission_classes = [IsNelayan]
     parser_classes     = [MultiPartParser, FormParser]
@@ -100,7 +83,6 @@ class ConfirmSubmissionView(APIView):
 
         foto = serializer.validated_data["foto_sampah"]
 
-        # Re-check hash — cegah foto berbeda di-submit saat confirm
         image_hash = generate_image_hash(foto)
         if is_duplicate_submission(image_hash, user_id=request.user.id):
             return Response(
@@ -129,7 +111,6 @@ class ConfirmSubmissionView(APIView):
 class SubmissionHistoryView(APIView):
     """
     GET /api/v1/submissions/history/
-    Riwayat submission milik nelayan yang sedang login.
     """
     permission_classes = [IsNelayan]
 
@@ -142,13 +123,11 @@ class SubmissionHistoryView(APIView):
             WasteSubmissionSerializer(submissions, many=True).data,
             status=status.HTTP_200_OK,
         )
-    
+
+
 class ValidateSubmissionView(APIView):
     """
     PATCH /api/v1/submissions/<submission_id>/validate/
-
-    Hanya TPS terverifikasi yang bisa akses.
-    TPS memasukkan berat dan jenis aktual setelah timbang fisik.
     """
     permission_classes = [IsTPS]
 
@@ -163,7 +142,6 @@ class ValidateSubmissionView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        # Pastikan submission ini memang ditujukan ke TPS yang sedang login
         if submission.tps.user != request.user:
             return Response(
                 {"detail": "Submission ini bukan milik TPS Anda."},
@@ -196,3 +174,30 @@ class ValidateSubmissionView(APIView):
             },
             status=status.HTTP_200_OK,
         )
+
+
+# ================= FINAL (CLEAN) =================
+class PublicStatsView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        from .models import WasteSubmission
+        from features.users.models import User
+
+        validated = WasteSubmission.objects.filter(status='validated')
+
+        total_kg = sum(
+            s.final_weight.get('berat_aktual_kg', 0)
+            for s in validated if s.final_weight
+        )
+
+        nelayan_aktif = User.objects.filter(
+            role='nelayan',
+            is_verified=True
+        ).count()
+
+        return Response({
+            'sampah_ton':      round(total_kg / 1000, 1),
+            'co2_dicegah_ton': round(total_kg * 0.002, 1),
+            'nelayan_aktif':   nelayan_aktif,
+        })
